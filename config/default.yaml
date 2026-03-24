@@ -1,0 +1,45 @@
+# Default configuration for copilot-computer-use
+
+copilot:
+  # Copilot API base URL
+  api_base: "https://api.githubcopilot.com"
+
+  # GitHub OAuth settings (VS Code's client ID)
+  github_client_id: "Iv1.b507a08c87ecfe98"
+  github_device_code_url: "https://github.com/login/device/code"
+  github_access_token_url: "https://github.com/login/oauth/access_token"
+  copilot_token_url: "https://api.github.com/copilot_internal/v2/token"
+
+  # Default model for vision tasks
+  vision_model: "gpt-4o"
+
+  # Default model for text reasoning
+  text_model: "gpt-4o"
+
+  # Token storage path
+  token_path: "~/.copilot-computer-use/tokens"
+
+agent:
+  # Maximum iterations before stopping
+  max_iterations: 50
+
+  # Delay between iterations (seconds)
+  loop_delay: 2.0
+
+  # Screenshot resize (smaller = faster API calls, less detail)
+  screenshot_max_width: 1280
+  screenshot_max_height: 800
+
+executor:
+  # Action execution delay (seconds) - safety buffer
+  action_delay: 0.5
+
+  # Mouse movement duration (seconds)
+  mouse_duration: 0.3
+
+spoofing:
+  # VS Code version to impersonate
+  vscode_version: "1.104.3"
+
+  # Copilot Chat extension version
+  copilot_chat_version: "0.26.7"
