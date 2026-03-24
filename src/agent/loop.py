@@ -16,41 +16,48 @@ from ..executor.base import BaseExecutor
 from ..screen.capture import ScreenCapture
 
 SYSTEM_PROMPT = """\
-You are a Computer Use agent. You can see the user's screen and control their \
-computer to accomplish tasks.
+You are a Computer Use agent. You control the user's desktop to accomplish tasks.
+You receive screenshots and must decide the next action.
 
-For each screenshot, analyze what you see and decide the next action.
+RESPONSE FORMAT: You MUST respond with ONLY a JSON object, nothing else:
 
-You MUST respond with a single JSON object (no other text):
+{"type": "<action>", "x": <x>, "y": <y>, "text": "<str>", "amount": <int>, "reason": "<why>"}
 
-{
-  "type": "<action_type>",
-  "x": <x_coordinate>,
-  "y": <y_coordinate>,
-  "text": "<text_to_type_or_key_combo>",
-  "amount": <scroll_amount_or_wait_seconds>,
-  "reason": "<brief explanation>"
-}
+ACTIONS:
+- "click" (x, y): Left-click at coordinates
+- "double_click" (x, y): Double-click
+- "right_click" (x, y): Right-click / context menu
+- "type" (text): Type a text string
+- "key" (text): Press key combo, e.g. "cmd+c", "enter", "ctrl+a", "alt+tab"
+- "scroll" (x, y, amount): Scroll wheel. amount>0 = up, amount<0 = down
+- "move" (x, y): Move mouse without clicking
+- "wait" (amount): Wait N seconds (for loading)
+- "done" (reason): Task is complete — explain what was accomplished
+- "fail" (reason): Task is impossible — explain why
 
-Available action types:
-- "click": Click at (x, y)
-- "double_click": Double-click at (x, y)
-- "right_click": Right-click at (x, y)
-- "type": Type text string (set "text" field)
-- "key": Press key combo like "cmd+c", "enter", "tab" (set "text" field)
-- "scroll": Scroll at (x, y) by amount (positive=up, negative=down)
-- "move": Move mouse to (x, y) without clicking
-- "wait": Wait for "amount" seconds (use when page is loading)
-- "done": Task is complete (set "reason" to describe result)
-- "fail": Task cannot be completed (set "reason" to explain why)
+COORDINATE RULES:
+- Origin (0, 0) is the TOP-LEFT corner of the screen
+- X increases rightward, Y increases downward
+- Aim for the CENTER of clickable elements (buttons, links, icons)
+- If a red coordinate grid overlay is visible, use the labeled numbers as reference
+  points to estimate positions more accurately
 
-Guidelines:
-- Coordinates are screen pixels from top-left (0,0)
-- Be precise with click coordinates — aim for the center of buttons/links
-- After typing, often you need to press "enter" to submit
-- Use "wait" if you expect a page to load
-- Use "done" when the task objective has been achieved
-- Use "fail" if the task is impossible or you're stuck in a loop
+STRATEGY:
+1. First, describe what you see on screen (internally — don't output this)
+2. Identify which UI element you need to interact with
+3. Estimate its center coordinates
+4. Choose the appropriate action
+5. After typing text, usually press "enter" to submit
+6. After clicking, wait for the UI to respond before next action
+7. If you see the same screen twice with no change, try a different approach
+8. If stuck for 3+ iterations, use "fail" with explanation
+"""
+
+SYSTEM_PROMPT_GRID_ADDENDUM = """
+NOTE: The screenshot has a red coordinate grid overlay with labeled numbers.
+Use these grid labels to estimate positions more precisely. For example, if a
+button appears to be at the intersection of grid line 400 (horizontal) and
+grid line 300 (vertical), click at approximately (400, 300).
 """
 
 
@@ -93,12 +100,24 @@ class AgentLoop:
         Returns:
             Final status message.
         """
+        # Show model cost info
+        model = self.client.config.vision_model
+        cost = self.client.get_model_cost(model)
+        cost_label = "FREE" if cost == 0 else f"{cost}x premium"
+
         print(f"\n{'='*60}")
-        print(f"Task: {task}")
+        print(f"  Task: {task}")
+        print(f"  Model: {model} ({cost_label})")
+        if self.annotator:
+            print(f"  Grid: enabled")
+        print(f"  Max iterations: {self.max_iterations}")
         print(f"{'='*60}\n")
 
         # Initialize conversation with system prompt
-        self.history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        prompt = SYSTEM_PROMPT
+        if self.annotator:
+            prompt += SYSTEM_PROMPT_GRID_ADDENDUM
+        self.history = [{"role": "system", "content": prompt}]
 
         for iteration in range(1, self.max_iterations + 1):
             print(f"--- Iteration {iteration}/{self.max_iterations} ---")
@@ -179,11 +198,13 @@ class AgentLoop:
             if action.type == ActionType.DONE:
                 msg = f"Task completed: {action.reason}"
                 print(f"\n  {msg}")
+                self._print_stats(iteration)
                 return msg
 
             if action.type == ActionType.FAIL:
                 msg = f"Task failed: {action.reason}"
                 print(f"\n  {msg}")
+                self._print_stats(iteration)
                 return msg
 
             # 6. Execute action
@@ -200,7 +221,22 @@ class AgentLoop:
             if len(self.history) > 22:  # system + 10 * (user + assistant)
                 self.history = [self.history[0]] + self.history[-20:]
 
-        return f"Reached maximum iterations ({self.max_iterations})"
+        msg = f"Reached maximum iterations ({self.max_iterations})"
+        self._print_stats(self.max_iterations)
+        return msg
+
+    def _print_stats(self, iterations: int) -> None:
+        """Print session statistics."""
+        stats = self.client.stats
+        print(f"\n  --- Session Stats ---")
+        print(f"  Iterations: {iterations}")
+        print(f"  API requests: {stats['total_requests']}")
+        print(f"  Rate limits hit: {stats['rate_limits_hit']}")
+        cost = self.client.get_model_cost()
+        if cost == 0:
+            print(f"  Premium requests consumed: 0 (model is FREE)")
+        else:
+            print(f"  Estimated premium requests: ~{int(iterations * cost)}")
 
     def _build_prompt(self, task: str, iteration: int) -> str:
         """Build the prompt for the current iteration."""
