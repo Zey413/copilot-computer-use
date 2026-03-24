@@ -62,6 +62,7 @@ class AgentLoop:
         client: CopilotClient,
         executor: BaseExecutor,
         screen: ScreenCapture | None = None,
+        annotator: Any | None = None,
         max_iterations: int = 50,
         loop_delay: float = 2.0,
     ):
@@ -71,12 +72,14 @@ class AgentLoop:
             client: Copilot API client.
             executor: Platform-specific action executor.
             screen: Screen capture instance (auto-created if None).
+            annotator: Optional ScreenAnnotator for grid overlay.
             max_iterations: Maximum number of iterations before stopping.
             loop_delay: Delay between iterations (seconds).
         """
         self.client = client
         self.executor = executor
         self.screen = screen or ScreenCapture()
+        self.annotator = annotator
         self.max_iterations = max_iterations
         self.loop_delay = loop_delay
         self.history: list[dict[str, Any]] = []
@@ -103,6 +106,16 @@ class AgentLoop:
             # 1. Capture screenshot
             print("  Capturing screenshot...")
             screenshot_bytes = self.screen.capture()
+
+            # Optional: add grid overlay for better coordinate estimation
+            if self.annotator:
+                from PIL import Image
+                import io
+
+                img = Image.open(io.BytesIO(screenshot_bytes))
+                img = self.annotator.add_grid(img)
+                screenshot_bytes = self.annotator.to_bytes(img)
+
             print(f"  Screenshot: {len(screenshot_bytes)} bytes")
 
             # 2. Send to Copilot Vision API

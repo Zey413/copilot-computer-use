@@ -19,17 +19,21 @@ from .copilot.config import CopilotConfig
 from .screen.capture import ScreenCapture
 
 
-def get_executor():
-    """Get the appropriate executor for the current platform."""
+def get_executor(prefer_xdotool: bool = False):
+    """Get the appropriate executor for the current platform.
+
+    Args:
+        prefer_xdotool: On Linux, prefer xdotool for better Unicode typing support.
+    """
     system = platform.system()
     if system == "Darwin":
         from .executor.macos import MacOSExecutor
+
         return MacOSExecutor()
     elif system == "Linux":
-        # Linux executor (TODO: implement)
-        from .executor.macos import MacOSExecutor  # Fallback to pyautogui
-        print("Warning: Using macOS executor on Linux (pyautogui should still work)")
-        return MacOSExecutor()
+        from .executor.linux import LinuxExecutor
+
+        return LinuxExecutor(prefer_xdotool=prefer_xdotool)
     else:
         print(f"Unsupported platform: {system}")
         sys.exit(1)
@@ -72,6 +76,22 @@ def main():
         default=800,
         help="Max screenshot height in pixels (default: 800)",
     )
+    parser.add_argument(
+        "--grid",
+        action="store_true",
+        help="Overlay coordinate grid on screenshots (helps AI with positioning)",
+    )
+    parser.add_argument(
+        "--grid-spacing",
+        type=int,
+        default=100,
+        help="Grid line spacing in pixels (default: 100)",
+    )
+    parser.add_argument(
+        "--xdotool",
+        action="store_true",
+        help="Linux only: prefer xdotool for typing (better Unicode support)",
+    )
 
     args = parser.parse_args()
 
@@ -87,13 +107,21 @@ def main():
         auth.device_flow_login()
 
     client = CopilotClient(auth=auth, config=config)
-    executor = get_executor()
+    executor = get_executor(prefer_xdotool=args.xdotool)
     screen = ScreenCapture(max_width=args.max_width, max_height=args.max_height)
+
+    # Optional: grid annotation
+    annotator = None
+    if args.grid:
+        from .screen.annotate import GridConfig, ScreenAnnotator
+
+        annotator = ScreenAnnotator(GridConfig(spacing=args.grid_spacing))
 
     agent = AgentLoop(
         client=client,
         executor=executor,
         screen=screen,
+        annotator=annotator,
         max_iterations=args.max_iterations,
         loop_delay=args.delay,
     )

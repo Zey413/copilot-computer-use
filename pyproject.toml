@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Free Computer Use agent powered by GitHub Copilot API"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 authors = [
     {name = "Zey413"},
 ]
@@ -28,7 +28,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

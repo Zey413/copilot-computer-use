@@ -31,25 +31,25 @@ class BaseExecutor(ABC):
         Args:
             action: The action to execute.
         """
-        match action.type:
-            case ActionType.CLICK:
-                self.click(action.x, action.y)
-            case ActionType.DOUBLE_CLICK:
-                self.double_click(action.x, action.y)
-            case ActionType.RIGHT_CLICK:
-                self.right_click(action.x, action.y)
-            case ActionType.TYPE:
-                self.type_text(action.text)
-            case ActionType.KEY:
-                self.press_key(action.text)
-            case ActionType.SCROLL:
-                self.scroll(action.x, action.y, action.amount)
-            case ActionType.MOVE:
-                self.move_mouse(action.x, action.y)
-            case ActionType.WAIT:
-                time.sleep(action.amount or 1)
-            case ActionType.DONE | ActionType.FAIL:
-                pass  # No OS action needed
+        t = action.type
+        if t == ActionType.CLICK:
+            self.click(action.x, action.y)
+        elif t == ActionType.DOUBLE_CLICK:
+            self.double_click(action.x, action.y)
+        elif t == ActionType.RIGHT_CLICK:
+            self.right_click(action.x, action.y)
+        elif t == ActionType.TYPE:
+            self.type_text(action.text)
+        elif t == ActionType.KEY:
+            self.press_key(action.text)
+        elif t == ActionType.SCROLL:
+            self.scroll(action.x, action.y, action.amount)
+        elif t == ActionType.MOVE:
+            self.move_mouse(action.x, action.y)
+        elif t == ActionType.WAIT:
+            time.sleep(action.amount or 1)
+        elif t in (ActionType.DONE, ActionType.FAIL):
+            pass  # No OS action needed
 
         # Post-action delay
         if action.type not in (ActionType.DONE, ActionType.FAIL, ActionType.WAIT):
