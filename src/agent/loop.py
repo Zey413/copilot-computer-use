@@ -72,6 +72,7 @@ class AgentLoop:
         annotator: Any | None = None,
         max_iterations: int = 50,
         loop_delay: float = 2.0,
+        save_screenshots: str | None = None,
     ):
         """Initialize the agent loop.
 
@@ -82,6 +83,7 @@ class AgentLoop:
             annotator: Optional ScreenAnnotator for grid overlay.
             max_iterations: Maximum number of iterations before stopping.
             loop_delay: Delay between iterations (seconds).
+            save_screenshots: If set, save each screenshot to this directory.
         """
         self.client = client
         self.executor = executor
@@ -89,6 +91,7 @@ class AgentLoop:
         self.annotator = annotator
         self.max_iterations = max_iterations
         self.loop_delay = loop_delay
+        self.save_screenshots = save_screenshots
         self.history: list[dict[str, Any]] = []
 
     def run(self, task: str) -> str:
@@ -151,6 +154,10 @@ class AgentLoop:
             else:
                 unchanged_count = 0
             last_screenshot_hash = current_hash
+
+            # Save screenshot for debugging
+            if self.save_screenshots:
+                self._save_screenshot(screenshot_bytes, iteration)
 
             # 2. Send to Copilot Vision API
             print("  Analyzing with Copilot Vision...")
@@ -259,6 +266,22 @@ class AgentLoop:
             print(f"  Premium requests consumed: 0 (model is FREE)")
         else:
             print(f"  Estimated premium requests: ~{int(iterations * cost)}")
+        if self.save_screenshots:
+            print(f"  Screenshots saved to: {self.save_screenshots}")
+
+    def _save_screenshot(self, screenshot_bytes: bytes, iteration: int) -> None:
+        """Save a screenshot to the debug directory.
+
+        Args:
+            screenshot_bytes: PNG image bytes.
+            iteration: Current iteration number.
+        """
+        import os
+
+        os.makedirs(self.save_screenshots, exist_ok=True)
+        path = os.path.join(self.save_screenshots, f"step_{iteration:03d}.png")
+        with open(path, "wb") as f:
+            f.write(screenshot_bytes)
 
     def _build_prompt(self, task: str, iteration: int, unchanged_count: int = 0) -> str:
         """Build the prompt for the current iteration.

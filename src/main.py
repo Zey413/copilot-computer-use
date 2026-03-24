@@ -92,6 +92,13 @@ def main():
         action="store_true",
         help="Linux only: prefer xdotool for typing (better Unicode support)",
     )
+    parser.add_argument(
+        "--save-screenshots",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help="Save each iteration's screenshot to DIR for debugging",
+    )
 
     args = parser.parse_args()
 
@@ -124,6 +131,7 @@ def main():
         annotator=annotator,
         max_iterations=args.max_iterations,
         loop_delay=args.delay,
+        save_screenshots=args.save_screenshots,
     )
 
     # Run
