@@ -1,5 +1,7 @@
 # copilot-computer-use
 
+**English** | [中文](README_zh.md)
+
 > **The world's first free Computer Use agent powered by GitHub Copilot API.**
 
 Screenshot → Vision Analysis → Action Execution — all through your Copilot subscription ($10/mo or free for students).

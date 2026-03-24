@@ -6,12 +6,12 @@ The main loop: screenshot → vision analysis → action planning → execution.
 
 from __future__ import annotations
 
-import sys
+import hashlib
 import time
 from typing import Any
 
 from ..agent.actions import Action, ActionType, parse_action_response
-from ..copilot.client import CopilotClient
+from ..copilot.client import CopilotClient, RateLimitError
 from ..executor.base import BaseExecutor
 from ..screen.capture import ScreenCapture
 
@@ -119,6 +119,11 @@ class AgentLoop:
             prompt += SYSTEM_PROMPT_GRID_ADDENDUM
         self.history = [{"role": "system", "content": prompt}]
 
+        # Screenshot change detection
+        last_screenshot_hash = None
+        unchanged_count = 0
+        max_unchanged = 3  # Warn after N identical screenshots
+
         for iteration in range(1, self.max_iterations + 1):
             print(f"--- Iteration {iteration}/{self.max_iterations} ---")
 
@@ -137,9 +142,19 @@ class AgentLoop:
 
             print(f"  Screenshot: {len(screenshot_bytes)} bytes")
 
+            # Check if screenshot changed from last iteration
+            current_hash = hashlib.md5(screenshot_bytes).hexdigest()
+            if current_hash == last_screenshot_hash:
+                unchanged_count += 1
+                if unchanged_count >= max_unchanged:
+                    print(f"  ⚠️  Screen unchanged for {unchanged_count} iterations!")
+            else:
+                unchanged_count = 0
+            last_screenshot_hash = current_hash
+
             # 2. Send to Copilot Vision API
             print("  Analyzing with Copilot Vision...")
-            prompt = self._build_prompt(task, iteration)
+            prompt = self._build_prompt(task, iteration, unchanged_count)
 
             try:
                 response = self.client.vision_with_history(
@@ -147,6 +162,13 @@ class AgentLoop:
                     image_bytes=screenshot_bytes,
                     prompt=prompt,
                 )
+            except RateLimitError as e:
+                print(f"  🔴 Rate limit exhausted: {e}")
+                if e.retry_after:
+                    print(f"     Server suggests waiting {e.retry_after}s")
+                print(f"     (Client already retried {self.client.max_retries} times)")
+                self._print_stats(iteration)
+                return f"Stopped: rate limit exhausted after iteration {iteration}"
             except Exception as e:
                 print(f"  API error: {e}")
                 time.sleep(self.loop_delay)
@@ -238,16 +260,38 @@ class AgentLoop:
         else:
             print(f"  Estimated premium requests: ~{int(iterations * cost)}")
 
-    def _build_prompt(self, task: str, iteration: int) -> str:
-        """Build the prompt for the current iteration."""
+    def _build_prompt(self, task: str, iteration: int, unchanged_count: int = 0) -> str:
+        """Build the prompt for the current iteration.
+
+        Args:
+            task: The task description.
+            iteration: Current iteration number.
+            unchanged_count: Number of consecutive identical screenshots.
+        """
         if iteration == 1:
             return (
                 f"Task: {task}\n\n"
                 "This is the current state of the screen. "
                 "What is the first action to take?"
             )
-        return (
+
+        base = (
             f"Task: {task}\n\n"
             "This is the updated screen after the previous action. "
             "What is the next action? If the task is complete, respond with 'done'."
         )
+
+        if unchanged_count >= 3:
+            base += (
+                f"\n\n⚠️ WARNING: The screen has NOT changed for {unchanged_count} "
+                "consecutive actions. Your previous action may not have worked. "
+                "Try a DIFFERENT approach, or if the task cannot be completed, "
+                "respond with 'fail'."
+            )
+        elif unchanged_count >= 1:
+            base += (
+                "\n\nNote: The screen appears unchanged from the last action. "
+                "Verify your action had the intended effect."
+            )
+
+        return base
