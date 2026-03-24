@@ -99,6 +99,11 @@ def main():
         metavar="DIR",
         help="Save each iteration's screenshot to DIR for debugging",
     )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Use streaming API for faster perceived response time",
+    )
 
     args = parser.parse_args()
 
@@ -132,6 +137,7 @@ def main():
         max_iterations=args.max_iterations,
         loop_delay=args.delay,
         save_screenshots=args.save_screenshots,
+        use_streaming=args.stream,
     )
 
     # Run

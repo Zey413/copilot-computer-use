@@ -9,8 +9,9 @@ Based on reverse engineering from github.com/nocoo/raven.
 from __future__ import annotations
 
 import base64
+import json
 import time
-from typing import Any
+from typing import Any, Generator
 
 import httpx
 
@@ -278,6 +279,141 @@ class CopilotClient:
         )
 
         return data["choices"][0]["message"]["content"]
+
+    def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> Generator[str, None, None]:
+        """Send a streaming chat completion request, yielding tokens.
+
+        Args:
+            messages: OpenAI-format messages list.
+            model: Model name (defaults to config.text_model).
+            temperature: Sampling temperature.
+            max_tokens: Maximum response tokens.
+
+        Yields:
+            Text tokens as they arrive from the API.
+        """
+        model = model or self.config.text_model
+        token = self.auth.get_copilot_token()
+        headers = self.config.get_headers(token, vision=False)
+
+        self._request_count += 1
+
+        with self._http.stream(
+            "POST",
+            f"{self.config.api_base}/chat/completions",
+            headers=headers,
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True,
+            },
+        ) as resp:
+            if resp.status_code == 429:
+                self._rate_limit_count += 1
+                raise RateLimitError("Rate limited on streaming request")
+            resp.raise_for_status()
+
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[6:]  # Strip "data: " prefix
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content")
+                    if content:
+                        yield content
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    continue
+
+    def vision_stream(
+        self,
+        messages: list[dict[str, Any]],
+        image_bytes: bytes,
+        prompt: str,
+        *,
+        media_type: str = "image/png",
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> Generator[str, None, None]:
+        """Send a streaming vision request with conversation history.
+
+        Args:
+            messages: Previous conversation messages.
+            image_bytes: Raw image bytes for the latest screenshot.
+            prompt: Text prompt for the current turn.
+            media_type: MIME type of the image.
+            model: Vision model name.
+            temperature: Sampling temperature.
+            max_tokens: Maximum response tokens.
+
+        Yields:
+            Text tokens as they arrive.
+        """
+        model = model or self.config.vision_model
+        b64_data = base64.b64encode(image_bytes).decode("ascii")
+        token = self.auth.get_copilot_token()
+        headers = self.config.get_headers(token, vision=True)
+
+        all_messages = list(messages) + [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{media_type};base64,{b64_data}",
+                        "detail": "auto",
+                    },
+                },
+            ],
+        }]
+
+        self._request_count += 1
+
+        with self._http.stream(
+            "POST",
+            f"{self.config.api_base}/chat/completions",
+            headers=headers,
+            json={
+                "model": model,
+                "messages": all_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True,
+            },
+        ) as resp:
+            if resp.status_code == 429:
+                self._rate_limit_count += 1
+                raise RateLimitError("Rate limited on streaming vision request")
+            resp.raise_for_status()
+
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content")
+                    if content:
+                        yield content
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    continue
 
     def get_model_cost(self, model: str | None = None) -> float:
         """Get the premium request multiplier for a model.

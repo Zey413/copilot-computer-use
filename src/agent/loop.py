@@ -73,6 +73,7 @@ class AgentLoop:
         max_iterations: int = 50,
         loop_delay: float = 2.0,
         save_screenshots: str | None = None,
+        use_streaming: bool = False,
     ):
         """Initialize the agent loop.
 
@@ -92,6 +93,7 @@ class AgentLoop:
         self.max_iterations = max_iterations
         self.loop_delay = loop_delay
         self.save_screenshots = save_screenshots
+        self.use_streaming = use_streaming
         self.history: list[dict[str, Any]] = []
 
     def run(self, task: str) -> str:
@@ -160,15 +162,31 @@ class AgentLoop:
                 self._save_screenshot(screenshot_bytes, iteration)
 
             # 2. Send to Copilot Vision API
-            print("  Analyzing with Copilot Vision...")
+            if self.use_streaming:
+                print("  Analyzing (streaming)... ", end="", flush=True)
+            else:
+                print("  Analyzing with Copilot Vision...")
             prompt = self._build_prompt(task, iteration, unchanged_count)
 
             try:
-                response = self.client.vision_with_history(
-                    messages=self.history,
-                    image_bytes=screenshot_bytes,
-                    prompt=prompt,
-                )
+                if self.use_streaming:
+                    # Collect streamed tokens
+                    chunks = []
+                    for token in self.client.vision_stream(
+                        messages=self.history,
+                        image_bytes=screenshot_bytes,
+                        prompt=prompt,
+                    ):
+                        chunks.append(token)
+                        print(token, end="", flush=True)
+                    response = "".join(chunks)
+                    print()  # Newline after streaming
+                else:
+                    response = self.client.vision_with_history(
+                        messages=self.history,
+                        image_bytes=screenshot_bytes,
+                        prompt=prompt,
+                    )
             except RateLimitError as e:
                 print(f"  🔴 Rate limit exhausted: {e}")
                 if e.retry_after:
